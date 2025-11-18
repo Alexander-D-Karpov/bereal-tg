@@ -30,7 +30,6 @@ env/
 
 # uv
 .uv/
-uv.lock
 
 # Ruff
 .ruff_cache/
@@ -69,7 +68,7 @@ htmlcov/
 
 # mypy
 .mypy_cache/
-.dmypy.json
+.dmyconfig.json
 dmypy.json
 
 # pyright
@@ -77,9 +76,6 @@ dmypy.json
 
 # Jupyter Notebook
 .ipynb_checkpoints
-
-# pyenv
-.python-version
 
 # Backup files
 *.bak

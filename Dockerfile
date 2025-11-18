@@ -8,7 +8,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY pyproject.toml .
 COPY .python-version .
 
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 COPY bot/ ./bot/
 

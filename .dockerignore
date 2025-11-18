@@ -9,3 +9,9 @@
 .venv
 .ruff_cache
 data/
+.pytest_cache
+.mypy_cache
+htmlcov
+*.log
+.DS_Store
+Thumbs.db
