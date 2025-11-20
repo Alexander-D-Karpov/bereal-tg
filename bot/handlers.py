@@ -78,7 +78,7 @@ async def list_registered_users(message: Message, storage: Storage) -> None:
         full_name = user_data.get("full_name", "Unknown")
 
         if username:
-            user_list.append(f"• {full_name} (@ {username})")
+            user_list.append(f"• {full_name} (@{username})")
         else:
             user_list.append(f"• {full_name}")
 
@@ -110,6 +110,16 @@ async def set_time_from(
         await message.reply("Неверный формат времени. Используйте HH:MM")
         return
 
+    chat_data = storage.get_chat_data(message.chat.id)
+    time_to = chat_data.get("time_to", "21:00")
+
+    if not validate_time_range(time_str, time_to):
+        await message.reply(
+            f"Время начала ({time_str}) должно быть раньше времени окончания ({time_to})"
+        )
+        return
+
+    storage.update_chat_data(message.chat.id, {"scheduled_next": None})
     storage.update_chat_data(message.chat.id, {"time_from": time_str})
     storage.save()
 
@@ -140,6 +150,16 @@ async def set_time_to(
         await message.reply("Неверный формат времени. Используйте HH:MM")
         return
 
+    chat_data = storage.get_chat_data(message.chat.id)
+    time_from = chat_data.get("time_from", "09:00")
+
+    if not validate_time_range(time_from, time_str):
+        await message.reply(
+            f"Время окончания ({time_str}) должно быть позже времени начала ({time_from})"
+        )
+        return
+
+    storage.update_chat_data(message.chat.id, {"scheduled_next": None})
     storage.update_chat_data(message.chat.id, {"time_to": time_str})
     storage.save()
 
@@ -198,7 +218,7 @@ async def get_settings(message: Message, storage: Storage) -> None:
         f"Настройки чата:\n\n"
         f"Время начала: {chat_data['time_from']} МСК\n"
         f"Время окончания: {chat_data['time_to']} МСК\n"
-        f"Зарегистрировано пользователей: {registered_count}\n\n"
+        f"Зарегистрировано пользователей: {registered_count}\n"
         f"Текст уведомления:\n{chat_data.get('message_text', 'Пора отправлять свои фотки')}"
     )
 
@@ -234,5 +254,18 @@ def validate_time(time_str: str) -> bool:
             return False
         hours, minutes = map(int, parts)
         return 0 <= hours <= 23 and 0 <= minutes <= 59
+    except ValueError:
+        return False
+
+
+def validate_time_range(time_from: str, time_to: str) -> bool:
+    try:
+        from_h, from_m = map(int, time_from.split(":"))
+        to_h, to_m = map(int, time_to.split(":"))
+
+        from_minutes = from_h * 60 + from_m
+        to_minutes = to_h * 60 + to_m
+
+        return from_minutes < to_minutes
     except ValueError:
         return False

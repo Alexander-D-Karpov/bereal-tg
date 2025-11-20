@@ -59,37 +59,25 @@ class Scheduler:
         scheduled_tomorrow = self.storage.deserialize_datetime(scheduled_tomorrow_str)
 
         if not scheduled_today or scheduled_today < now:
-            if scheduled_today and scheduled_today < now:
-                logger.info(
-                    f"Chat {chat_id}: Previous today schedule passed "
-                    f"({scheduled_today.strftime('%H:%M')}), generating new one"
-                )
-
-            scheduled_today = self.get_random_time(
-                chat_data["time_from"], chat_data["time_to"], today
-            )
-
-            if scheduled_today < now and pinged_today:
-                logger.info(
-                    f"Chat {chat_id}: Today's scheduled time {scheduled_today.strftime('%H:%M')} "
-                    f"is in the past and already pinged today, skipping"
-                )
+            if pinged_today:
+                logger.info(f"Chat {chat_id}: Already pinged today, no today schedule needed")
                 scheduled_today = None
-            elif scheduled_today < now and not pinged_today:
-                logger.info(
-                    f"Chat {chat_id}: Today's scheduled time {scheduled_today.strftime('%H:%M')} "
-                    f"is in the past but NO ping today yet, keeping it for immediate send"
-                )
             else:
-                logger.info(
-                    f"Chat {chat_id}: Scheduled for today at {scheduled_today.strftime('%H:%M')} MSK"
+                scheduled_today = self.get_random_time(
+                    chat_data["time_from"], chat_data["time_to"], today
                 )
+                if scheduled_today < now:
+                    logger.info(
+                        f"Chat {chat_id}: Today's time passed without ping, no today schedule"
+                    )
+                    scheduled_today = None
+                else:
+                    logger.info(
+                        f"Chat {chat_id}: Scheduled for today at "
+                        f"{scheduled_today.strftime('%H:%M')} MSK"
+                    )
 
         if not scheduled_tomorrow or scheduled_tomorrow.date() != tomorrow.date():
-            if scheduled_tomorrow:
-                logger.info(
-                    f"Chat {chat_id}: Previous tomorrow schedule outdated, generating new one"
-                )
             scheduled_tomorrow = self.get_random_time(
                 chat_data["time_from"], chat_data["time_to"], tomorrow
             )
@@ -117,7 +105,7 @@ class Scheduler:
         logger.info(f"Chat {chat_id}: Task created and scheduled")
 
     async def wait_and_send(
-        self, chat_id: int, scheduled_today: datetime | None, scheduled_tomorrow: datetime | None
+        self, chat_id: int, scheduled_today: datetime | None, scheduled_tomorrow: datetime
     ) -> None:
         try:
             if scheduled_today:
@@ -129,24 +117,48 @@ class Scheduler:
                     )
                     await self.wait_until(scheduled_today)
                 else:
-                    logger.info(
-                        f"Chat {chat_id}: Sending today's notification immediately "
-                        f"(scheduled time {scheduled_today.strftime('%H:%M')} already passed)"
-                    )
+                    logger.info(f"Chat {chat_id}: Sending today's notification immediately")
+
                 logger.info(f"Chat {chat_id}: Sending today's notification")
                 await self.send_notification(chat_id)
 
-            if scheduled_tomorrow:
-                wait_seconds = (scheduled_tomorrow - datetime.now(MSK)).total_seconds()
-                logger.info(
-                    f"Chat {chat_id}: Waiting {wait_seconds:.0f}s until tomorrow's notification "
-                    f"({scheduled_tomorrow.strftime('%H:%M')} MSK)"
+                logger.info(f"Chat {chat_id}: Promoting tomorrow to today")
+                chat_data = self.storage.get_chat_data(chat_id)
+                now = datetime.now(MSK)
+                next_tomorrow = (now + timedelta(days=1)).replace(
+                    hour=0, minute=0, second=0, microsecond=0
                 )
-                await self.wait_until(scheduled_tomorrow)
-                logger.info(f"Chat {chat_id}: Sending tomorrow's notification")
-                await self.send_notification(chat_id)
+                new_tomorrow = self.get_random_time(
+                    chat_data["time_from"], chat_data["time_to"], next_tomorrow
+                )
 
-            logger.info(f"Chat {chat_id}: Both notifications sent, rescheduling")
+                self.storage.update_chat_data(
+                    chat_id,
+                    {
+                        "scheduled_today": chat_data.get("scheduled_tomorrow"),
+                        "scheduled_tomorrow": self.storage.serialize_datetime(new_tomorrow),
+                    },
+                )
+                self.storage.save()
+
+                scheduled_tomorrow = new_tomorrow
+
+                logger.info(
+                    f"Chat {chat_id}: New tomorrow scheduled at "
+                    f"{new_tomorrow.strftime('%Y-%m-%d %H:%M')} MSK"
+                )
+
+            wait_seconds = (scheduled_tomorrow - datetime.now(MSK)).total_seconds()
+            logger.info(
+                f"Chat {chat_id}: Waiting {wait_seconds:.0f}s until next notification "
+                f"({scheduled_tomorrow.strftime('%H:%M')} MSK)"
+            )
+            await self.wait_until(scheduled_tomorrow)
+
+            logger.info(f"Chat {chat_id}: Sending notification")
+            await self.send_notification(chat_id)
+
+            logger.info(f"Chat {chat_id}: Rescheduling after notification sent")
             self.schedule_for_chat(chat_id)
         except asyncio.CancelledError:
             logger.info(f"Chat {chat_id}: Task cancelled")
