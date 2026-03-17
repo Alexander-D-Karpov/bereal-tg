@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 from aiogram import Bot, Router
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BotCommand, Message
@@ -7,6 +9,8 @@ from bot.storage import Storage
 
 
 router = Router()
+_who_cache: dict[int, tuple[datetime, str]] = {}
+WHO_COOLDOWN = timedelta(seconds=120)
 
 
 async def setup_commands(bot: Bot) -> None:
@@ -66,26 +70,33 @@ async def list_registered_users(message: Message, storage: Storage) -> None:
         await message.reply("Эта команда работает только в групповых чатах")
         return
 
-    registered_users = storage.get_registered_users(message.chat.id)
-
-    if not registered_users:
-        await message.reply("Пока никто не зарегистрирован для получения уведомлений.")
-        return
+    now = datetime.now()
+    chat_id = message.chat.id
+    registered_users = storage.get_registered_users(chat_id)
 
     user_list = []
     for _user_id_str, user_data in registered_users.items():
         username = user_data.get("username")
         full_name = user_data.get("full_name", "Unknown")
-
         if username:
             user_list.append(f"• {full_name} (@{username})")
         else:
             user_list.append(f"• {full_name}")
 
-    response = f"Зарегистрированные пользователи ({len(registered_users)}):\n\n"
-    response += "\n".join(user_list)
+    current_response = (
+        f"Зарегистрированные пользователи ({len(registered_users)}):\n\n" + "\n".join(user_list)
+        if registered_users
+        else "Пока никто не зарегистрирован для получения уведомлений."
+    )
 
-    await message.reply(response)
+    if chat_id in _who_cache:
+        cached_time, cached_response = _who_cache[chat_id]
+        if now - cached_time < WHO_COOLDOWN and cached_response == current_response:
+            await message.reply("Слишком частые запросы, ЖДИ")
+            return
+
+    _who_cache[chat_id] = (now, current_response)
+    await message.reply(current_response)
 
 
 @router.message(Command("set_time_from"))
