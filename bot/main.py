@@ -3,6 +3,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
 
 from bot.config import Config
@@ -28,9 +29,12 @@ async def main() -> None:
     storage = Storage(config.data_file)
     await storage.load()
 
+    session = AiohttpSession(proxy=config.proxy_url) if config.proxy_url else None
+
     bot = Bot(
         token=config.bot_token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session,
     )
 
     scheduler = Scheduler(bot, storage)
