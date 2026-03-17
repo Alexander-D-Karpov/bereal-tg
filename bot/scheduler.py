@@ -174,6 +174,19 @@ class Scheduler:
 
     async def send_notification(self, chat_id: int) -> None:
         try:
+            now = datetime.now(MSK)
+
+            lock_time = self.storage.read_lock(chat_id)
+            if lock_time and lock_time.date() == now.date():
+                logger.info(
+                    f"Chat {chat_id}: Lock file says already pinged today at {lock_time.strftime('%H:%M')}, skipping")
+                return
+
+            last_ping = self.storage.get_last_ping(chat_id)
+            if last_ping and last_ping.date() == now.date():
+                logger.info(f"Chat {chat_id}: last_ping says already pinged today, skipping")
+                return
+
             logger.info(f"Chat {chat_id}: Starting notification send")
             chat_data = self.storage.get_chat_data(chat_id)
             message_text = chat_data.get("message_text", "Пора отправлять свои фотки")
@@ -196,19 +209,18 @@ class Scheduler:
                 else:
                     mentions.append(hlink(full_name, f"tg://user?id={user_id_str}"))
 
-            logger.info(f"Chat {chat_id}: Mentioning {len(mentions)} registered users")
-
             full_message = f"{message_text}\n\n" + " ".join(mentions)
+
+            self.storage.write_lock(chat_id, now)
 
             await self.bot.send_message(chat_id, full_message, parse_mode="HTML")
 
-            ping_time = datetime.now(MSK)
-            self.storage.set_last_ping(chat_id, ping_time)
+            self.storage.set_last_ping(chat_id, now)
             self.storage.save()
 
             logger.info(
                 f"Chat {chat_id}: Notification sent successfully at "
-                f"{ping_time.strftime('%Y-%m-%d %H:%M:%S')} MSK"
+                f"{now.strftime('%Y-%m-%d %H:%M:%S')} MSK"
             )
         except Exception as e:
             logger.error(

@@ -104,3 +104,14 @@ class Storage:
 
     def deserialize_datetime(self, dt_str: str | None) -> datetime | None:
         return datetime.fromisoformat(dt_str) if dt_str else None
+
+    def write_lock(self, chat_id: int, ping_time: datetime) -> None:
+        lock_file = self.data_file.parent / f".lock_{chat_id}"
+        lock_file.write_text(ping_time.isoformat(), encoding="utf-8")
+
+    def read_lock(self, chat_id: int) -> datetime | None:
+        lock_file = self.data_file.parent / f".lock_{chat_id}"
+        try:
+            return datetime.fromisoformat(lock_file.read_text(encoding="utf-8").strip())
+        except (FileNotFoundError, ValueError):
+            return None
